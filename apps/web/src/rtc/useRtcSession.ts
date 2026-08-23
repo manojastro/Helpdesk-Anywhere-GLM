@@ -21,6 +21,7 @@ export interface RtcSessionState {
   chat: ChatMessage[];
   dataChannelOpen: boolean;
   error: string | null;
+  videoStats: string | null;
   sendChat: (text: string) => void;
   sendControl: (msg: ControlMessage) => boolean;
   disconnect: () => void;
@@ -38,6 +39,7 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
   const [chat, setChat] = useState<ChatMessage[]>([]);
   const [dataChannelOpen, setDataChannelOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [videoStats, setVideoStats] = useState<string | null>(null);
 
   const peerRef = useRef<PeerSession | null>(null);
   const sigRef = useRef<SignallingClient | null>(null);
@@ -156,6 +158,13 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
 
   const pendingOfferRef = useRef<import('@helpdesk/shared').SdpPayload | null>(null);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void peerRef.current?.videoStats().then((s) => setVideoStats(s));
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const sendChat = useCallback(
     (text: string) => {
       const msg: ChatMessage = {
@@ -186,6 +195,7 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
     chat,
     dataChannelOpen,
     error,
+    videoStats,
     sendChat,
     sendControl,
     disconnect,

@@ -1,12 +1,16 @@
 using Microsoft.Extensions.Logging;
 using SIPSorcery.Net;
+using SIPSorceryMedia.Abstractions;
+using SIPSorceryMedia.Encoders;
+using Vpx.Net;
 
 namespace HelpdeskAgent;
 
 /// <summary>
-/// Phase 2 core: SIPSorcery WebRTC peer answering the technician browser.
+/// SIPSorcery WebRTC peer answering the technician browser.
 /// The browser is the offerer (creates the DataChannel); the agent answers,
-/// opens the DataChannel, and exchanges test messages in both directions.
+/// opens the DataChannel, streams the desktop over a VP8 video track, and
+/// exchanges chat/control messages in both directions.
 /// </summary>
 public sealed class AgentSession : IAsyncDisposable
 {
@@ -14,6 +18,14 @@ public sealed class AgentSession : IAsyncDisposable
     private readonly SignallingClient _signalling;
     private RTCPeerConnection? _pc;
     private RTCDataChannel? _dc;
+
+    private DesktopDuplicator? _capture;
+    private GdiCapture? _gdiCapture;
+    private Vp8NetVideoEncoderEndPoint? _videoSource;
+    private long _framesSent;
+    private long _encodedCount;
+    private int _lastEncodedSize;
+    private long _lastLoggedFrames;
 
     private readonly List<IceCandidatePayload> _pendingRemoteIce = new();
     private bool _remoteDescriptionSet;
@@ -23,6 +35,9 @@ public sealed class AgentSession : IAsyncDisposable
 
     public RTCPeerConnectionState State { get; private set; } = RTCPeerConnectionState.@new;
     public bool DataChannelOpen => _dc?.IsOpened ?? false;
+    public long FramesCaptured => _framesSent;
+    public long EncodedCount => _encodedCount;
+    public int LastEncodedSize => _lastEncodedSize;
 
     public AgentSession(SignallingClient signalling, ILogger log)
     {
@@ -76,7 +91,11 @@ public sealed class AgentSession : IAsyncDisposable
             State = state;
             _log.LogInformation("WebRTC connection state: {State}", state);
             ConnectionStateChanged?.Invoke(state);
-            if (state is RTCPeerConnectionState.failed or RTCPeerConnectionState.closed)
+            if (state == RTCPeerConnectionState.connected)
+            {
+                StartScreenCapture();
+            }
+            else if (state is RTCPeerConnectionState.failed or RTCPeerConnectionState.closed)
             {
                 Close($"connection {state}");
             }
@@ -102,7 +121,169 @@ public sealed class AgentSession : IAsyncDisposable
             BindDataChannel(channel);
         };
 
+        // ---- Phase 3: desktop video track (VP8, SIPSorceryMedia.Encoders) ----
+        if (Environment.GetEnvironmentVariable("HA_NO_VIDEO") != "1")
+        {
+            _videoSource = new Vp8NetVideoEncoderEndPoint();
+            _videoSource.RestrictFormats(f => f.Codec == VideoCodecsEnum.VP8);
+            var videoTrack = new MediaStreamTrack(
+                _videoSource.GetVideoSourceFormats(), MediaStreamStatusEnum.SendOnly);
+            pc.addTrack(videoTrack);
+            _videoSource.OnVideoSourceEncodedSample += (durationRtpUnits, sample) =>
+            {
+                _encodedCount++;
+                _lastEncodedSize = sample.Length;
+                pc.SendVideo(durationRtpUnits, sample);
+            };
+            pc.OnVideoFormatsNegotiated += formats =>
+                _videoSource.SetVideoSourceFormat(formats.First());
+            _log.LogInformation("VP8 video track added (DXGI desktop capture source)");
+        }
+
         _log.LogInformation("SIPSorcery RTCPeerConnection created (SIPSorcery validation)");
+    }
+
+    private void StartScreenCapture()
+    {
+        if (_capture is not null || _gdiCapture is not null) return;
+        var mode = Environment.GetEnvironmentVariable("HA_CAPTURE") ?? "auto";
+        if (mode == "gdi")
+        {
+            StartGdiCapture("forced by HA_CAPTURE=gdi");
+            return;
+        }
+        try
+        {
+            var fps = int.TryParse(Environment.GetEnvironmentVariable("HA_FPS"), out var f) ? f : 8;
+            var capture = new DesktopDuplicator(_log, fps);
+            var blackFrames = 0;
+            const int blackThreshold = 3;
+            capture.OnFrame += (w, h, stride, pixels) =>
+            {
+                // DXGI duplication yields black frames in some remote sessions
+                // (classic RDP limitation) — detect and fall back to GDI BitBlt.
+                if (blackFrames >= 0 && blackFrames < blackThreshold)
+                {
+                    if (IsUniformlyBlack(pixels))
+                    {
+                        blackFrames++;
+                        _log.LogWarning("DXGI frame {N} is uniformly black", blackFrames);
+                        if (blackFrames >= blackThreshold)
+                        {
+                            blackFrames = -1; // signal: switch
+                            StopDxgiCapture(capture);
+                            StartGdiCapture("DXGI produced black frames (remote session?)");
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        blackFrames = -1; // content confirmed
+                    }
+                }
+                FeedVideoFrame(w, h, stride, pixels, fps);
+            };
+            capture.Initialise();
+            capture.Start();
+            _capture = capture;
+            _log.LogInformation("screen capture started: DXGI ({W}x{H})", capture.Width, capture.Height);
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "DXGI desktop capture failed to start — trying GDI");
+            StartGdiCapture("DXGI init failed");
+        }
+    }
+
+    private void StopDxgiCapture(DesktopDuplicator capture)
+    {
+        try
+        {
+            capture.Stop();
+            capture.Dispose();
+        }
+        catch { /* shutting down */ }
+        if (ReferenceEquals(_capture, capture)) _capture = null;
+    }
+
+    private void StartGdiCapture(string reason)
+    {
+        try
+        {
+            var fps = int.TryParse(Environment.GetEnvironmentVariable("HA_FPS"), out var f) ? f : 8;
+            _log.LogInformation("switching to GDI capture: {Reason}", reason);
+            var gdi = new GdiCapture(_log, fps);
+            gdi.OnFrame += (w, h, stride, pixels) => FeedVideoFrame(w, h, stride, pixels, fps);
+            gdi.Initialise();
+            gdi.Start();
+            _gdiCapture = gdi;
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "GDI capture failed too — no video");
+        }
+    }
+
+    private static bool IsUniformlyBlack(byte[] pixels)
+    {
+        // Sample BGRA bytes, skipping alpha. ~16k samples spread over the frame.
+        var step = Math.Max(16, pixels.Length / 16384) * 4;
+        for (var i = 0; i + 2 < pixels.Length; i += step)
+        {
+            if (pixels[i] != 0 || pixels[i + 1] != 0 || pixels[i + 2] != 0) return false;
+        }
+        return true;
+    }
+
+    private void FeedVideoFrame(int w, int h, int stride, byte[] pixels, int fps)
+    {
+        var source = _videoSource;
+        if (source is null) return;
+
+        // Downscale by an integer factor to cap bandwidth (no bitrate API on
+        // the managed VP8 encoder), then crop to multiples of 16.
+        var maxWidth = int.TryParse(Environment.GetEnvironmentVariable("HA_MAX_WIDTH"), out var mw) ? mw : 1280;
+        var factor = Math.Max(1, (int)Math.Ceiling(w / (double)maxWidth));
+        var w16 = (w / factor) & ~15;
+        var h16 = (h / factor) & ~15;
+        if (w16 == 0 || h16 == 0) return;
+
+        var rowLen = w16 * 4;
+        byte[] tight;
+        if (factor == 1 && stride == rowLen && w16 == w)
+        {
+            tight = pixels;
+        }
+        else
+        {
+            tight = new byte[rowLen * h16];
+            if (factor == 1)
+            {
+                for (var y = 0; y < h16; y++)
+                {
+                    Buffer.BlockCopy(pixels, y * stride, tight, y * rowLen, rowLen);
+                }
+            }
+            else
+            {
+                // Nearest-neighbour subsample (cheap; POC quality is fine).
+                for (var y = 0; y < h16; y++)
+                {
+                    var srcRow = (y * factor) * stride;
+                    for (var x = 0; x < w16; x++)
+                    {
+                        var src = srcRow + (x * factor) * 4;
+                        tight[y * rowLen + x * 4] = pixels[src];
+                        tight[y * rowLen + x * 4 + 1] = pixels[src + 1];
+                        tight[y * rowLen + x * 4 + 2] = pixels[src + 2];
+                        tight[y * rowLen + x * 4 + 3] = pixels[src + 3];
+                    }
+                }
+            }
+        }
+        source.ExternalVideoSourceRawSample(
+            (uint)(1000.0 / fps), w16, h16, tight, VideoPixelFormatsEnum.Bgra);
+        _framesSent++;
     }
 
     private void BindDataChannel(RTCDataChannel channel)
@@ -111,11 +292,8 @@ public sealed class AgentSession : IAsyncDisposable
         Action hello = () =>
         {
             _log.LogInformation("DataChannel OPEN (label={Label}, id={Id})", channel.label, channel.id);
-            // Endpoint → browser test message (Phase 2 criterion).
             SendChat("endpoint agent connected — DataChannel open");
         };
-        // SIPSorcery may hand over remote-created channels that are already open,
-        // in which case onopen never fires — greet immediately in that case.
         if (channel.IsOpened) hello();
         channel.onopen += hello;
         channel.onclose += () => _log.LogWarning("DataChannel closed");
@@ -158,7 +336,6 @@ public sealed class AgentSession : IAsyncDisposable
                 case "mouse_click":
                 case "mouse_wheel":
                 case "key":
-                    // Phase 4 will dispatch these to SendInput.
                     _log.LogTrace("control message {Type} (input injection not yet active)", typeEl.GetString());
                     break;
                 default:
@@ -176,7 +353,13 @@ public sealed class AgentSession : IAsyncDisposable
     {
         var dc = _dc;
         if (dc is not { IsOpened: true }) return false;
-        var payload = $$"""{"type":"chat","text":{{System.Text.Json.JsonSerializer.Serialize(text)}},"ts":{{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}},"from":"endpoint"}""";
+        var payload = System.Text.Json.JsonSerializer.Serialize(new
+        {
+            type = "chat",
+            text,
+            ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            from = "endpoint",
+        });
         dc.send(payload);
         return true;
     }
@@ -196,7 +379,7 @@ public sealed class AgentSession : IAsyncDisposable
             var setResult = pc.setRemoteDescription(remote);
             if (setResult != SetDescriptionResultEnum.OK)
             {
-                _log.LogError("setRemoteDescription failed: {Result}", setResult);
+                                _log.LogError("setRemoteDescription failed: {Result}", setResult);
                 return;
             }
             _remoteDescriptionSet = true;
@@ -207,7 +390,7 @@ public sealed class AgentSession : IAsyncDisposable
                 var answer = pc.createAnswer();
                 pc.setLocalDescription(answer);
                 var sdpText = pc.localDescription?.sdp?.ToString() ?? "";
-                _log.LogInformation("answer ready, SDP length {Len}", sdpText.Length);
+                                _log.LogInformation("answer ready, SDP length {Len}", sdpText.Length);
                 await _signalling.SendSdpAsync(new SdpPayload("answer", sdpText));
             }
         }
@@ -266,7 +449,21 @@ public sealed class AgentSession : IAsyncDisposable
 
     public void Close(string reason)
     {
-        _log.LogInformation("closing agent session: {Reason}", reason);
+        _log.LogInformation("closing agent session: {Reason} (frames captured: {Frames})", reason, _framesSent);
+        try
+        {
+            _capture?.Stop();
+            _capture?.Dispose();
+        }
+        catch { /* already disposed */ }
+        _capture = null;
+        try
+        {
+            _gdiCapture?.Stop();
+            _gdiCapture?.Dispose();
+        }
+        catch { /* already disposed */ }
+        _gdiCapture = null;
         try
         {
             _dc?.close();

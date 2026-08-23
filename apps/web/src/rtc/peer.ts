@@ -42,6 +42,12 @@ export class PeerSession {
 
     this.pc = new RTCPeerConnection(config);
 
+    // The technician receives the endpoint's screen: the offer must include a
+    // video m-line so the .NET agent's VP8 answer track has somewhere to land.
+    if (role === 'technician') {
+      this.pc.addTransceiver('video', { direction: 'recvonly' });
+    }
+
     this.pc.onconnectionstatechange = () => {
       const s = this.pc.connectionState;
       const map: Record<RTCPeerConnectionState, ConnState> = {
@@ -61,7 +67,12 @@ export class PeerSession {
 
     this.pc.ontrack = (event) => {
       const [stream] = event.streams;
-      this.cb.onTrack?.(stream ?? null);
+      if (stream) {
+        this.cb.onTrack?.(stream);
+      } else if (event.track.kind === 'video') {
+        // .NET answers carry no msid — synthesize a stream from the track.
+        this.cb.onTrack?.(new MediaStream([event.track]));
+      }
     };
 
     this.pc.ondatachannel = (event) => {
@@ -167,6 +178,35 @@ export class PeerSession {
       await this.pc.addIceCandidate(candidate);
     } catch (err) {
       if (!this.ignoreOffer) throw err;
+    }
+  }
+
+  /** Inbound video stats for the quality indicator (null until connected). */
+  async videoStats(): Promise<string | null> {
+    if (this.pc.connectionState !== 'connected') return null;
+    try {
+      const stats = await this.pc.getStats();
+      let bytes = -1;
+      let frames = -1;
+      let lost = -1;
+      stats.forEach((r) => {
+        const rep = r as unknown as {
+          type: string;
+          kind?: string;
+          bytesReceived?: number;
+          framesDecoded?: number;
+          packetsLost?: number;
+        };
+        if (rep.type === 'inbound-rtp' && rep.kind === 'video') {
+          bytes = rep.bytesReceived ?? 0;
+          frames = rep.framesDecoded ?? 0;
+          lost = rep.packetsLost ?? 0;
+        }
+      });
+      if (bytes < 0) return 'video: waiting for RTP…';
+      return `video ✓ ${Math.round(bytes / 1024)} KB · ${frames} frames decoded · ${lost} lost`;
+    } catch {
+      return null;
     }
   }
 

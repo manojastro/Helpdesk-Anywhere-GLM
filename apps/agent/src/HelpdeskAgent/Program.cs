@@ -93,8 +93,8 @@ else
            && DateTimeOffset.UtcNow - started < TimeSpan.FromMinutes(10))
     {
         await Task.Delay(2000, cts.Token);
-        log.LogInformation("status: state={State} dcOpen={DcOpen} chatRx={ChatRx}",
-            session.State, session.DataChannelOpen, chatLog.Count);
+        log.LogInformation("status: state={State} dcOpen={DcOpen} chatRx={ChatRx} frames={Frames} encoded={Enc} lastSz={Sz}",
+            session.State, session.DataChannelOpen, chatLog.Count, session.FramesCaptured, session.EncodedCount, session.LastEncodedSize);
     }
 }
 

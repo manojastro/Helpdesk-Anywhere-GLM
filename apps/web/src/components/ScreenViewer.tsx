@@ -7,6 +7,8 @@ interface Props {
   onControl?: (msg: ControlMessage) => void;
   /** Disable input capture (e.g. view-only). */
   inputEnabled?: boolean;
+  /** Fires when the browser presents a new video frame to the compositor. */
+  onFramePresented?: () => void;
 }
 
 function relPos(e: React.MouseEvent<HTMLVideoElement>, el: HTMLVideoElement): { x: number; y: number } {
@@ -23,7 +25,7 @@ const BUTTON_MAP: Record<number, MouseButton> = { 0: 'left', 1: 'middle', 2: 'ri
  * Remote screen renderer + normalized input capture.
  * Coordinates are normalized 0..1 so the endpoint can map to any resolution/DPI.
  */
-export function ScreenViewer({ stream, connected, onControl, inputEnabled = true }: Props) {
+export function ScreenViewer({ stream, connected, onControl, inputEnabled = true, onFramePresented }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -32,7 +34,29 @@ export function ScreenViewer({ stream, connected, onControl, inputEnabled = true
     if (el.srcObject !== stream) {
       el.srcObject = stream;
     }
-    if (stream) void el.play().catch(() => undefined);
+    if (stream) {
+      void el.play().catch(() => undefined);
+      // requestVideoFrameCallback fires per COMPOSITED frame — this proves
+      // the video is actually painting, not merely decoding.
+      type VideoWithRvfc = HTMLVideoElement & {
+        requestVideoFrameCallback?: (cb: () => void) => number;
+      };
+      const v = el as VideoWithRvfc;
+      if (v.requestVideoFrameCallback) {
+        let cancelled = false;
+        const tick = () => {
+          if (cancelled) return;
+          onFramePresented?.();
+          v.requestVideoFrameCallback?.(tick);
+        };
+        v.requestVideoFrameCallback?.(tick);
+        return () => {
+          cancelled = true;
+        };
+      }
+    }
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream]);
 
   if (!connected || !stream) {
@@ -74,6 +98,7 @@ export function ScreenViewer({ stream, connected, onControl, inputEnabled = true
     <video
       ref={videoRef}
       autoPlay
+      muted
       playsInline
       tabIndex={0}
       onMouseMove={(e) => send({ type: 'mouse_move', ...relPos(e, e.currentTarget) })}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CreateSessionResponse, JoinSessionResponse } from '@helpdesk/shared';
 import { api } from '../api';
 import { useRtcSession } from '../rtc/useRtcSession';
@@ -11,6 +11,8 @@ export function ConsolePage({ onLogout }: { onLogout: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [framesPresented, setFramesPresented] = useState(0);
+  const [videoDebug, setVideoDebug] = useState('');
 
   const rtc = useRtcSession({
     role: 'technician',
@@ -140,7 +142,16 @@ export function ConsolePage({ onLogout }: { onLogout: () => void }) {
                 {rtc.peerPresent ? 'connected' : 'waiting'} · Session {created?.session.code}
               </span>
             </div>
-            <ScreenViewer stream={rtc.remoteStream} connected={rtc.connState === 'connected'} onControl={rtc.sendControl} />
+            <ScreenViewer
+              stream={rtc.remoteStream}
+              connected={rtc.connState === 'connected'}
+              onControl={rtc.sendControl}
+              onFramePresented={() => setFramesPresented((n) => n + 1)}
+            />
+            <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>
+              {rtc.videoStats ?? 'video stats pending…'} · painted: {framesPresented} {videoDebug}
+            </p>
+            <VideoDebugProbe stream={rtc.remoteStream} onChange={setVideoDebug} />
           </div>
           <div className="card" style={{ display: 'flex', flexDirection: 'column', height: 480 }}>
             <h3 style={{ margin: '0 0 8px' }}>Chat</h3>
@@ -148,6 +159,67 @@ export function ConsolePage({ onLogout }: { onLogout: () => void }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function VideoDebugProbe({
+  stream,
+  onChange,
+}: {
+  stream: MediaStream | null;
+  onChange: (s: string) => void;
+}) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const el = ref.current;
+      if (!el) return;
+      // Draw the video into a canvas and measure pixel variance — this works
+      // regardless of rVFC/compositor support and proves real picture content.
+      let variance = -1;
+      let brightest = 0;
+      const cv = canvasRef.current;
+      if (el.videoWidth > 0 && cv) {
+        cv.width = 64;
+        cv.height = 36;
+        const ctx = cv.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(el, 0, 0, 64, 36);
+          const data = ctx.getImageData(0, 0, 64, 36).data;
+          let sum = 0;
+          let sumSq = 0;
+          const n = data.length / 4;
+          for (let i = 0; i < data.length; i += 4) {
+            const lum = (data[i]! + data[i + 1]! + data[i + 2]!) / 3;
+            sum += lum;
+            sumSq += lum * lum;
+            if (lum > brightest) brightest = lum;
+          }
+          const mean = sum / n;
+          variance = Math.round(Math.sqrt(sumSq / n - mean * mean) * 10) / 10;
+        }
+      }
+      onChange(
+        `· el: ${el.videoWidth}x${el.videoHeight} rs=${el.readyState} content: ${variance >= 0 ? `σ=${variance} max=${Math.round(brightest)}` : 'n/a'}`,
+      );
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [stream, onChange]);
+  return (
+    <div style={{ position: 'absolute', width: 2, height: 2, opacity: 0, pointerEvents: 'none' }}>
+    <video
+      muted
+      autoPlay
+      playsInline
+      style={{ position: 'absolute', width: 2, height: 2, opacity: 0, pointerEvents: 'none' }}
+      ref={(el) => {
+        ref.current = el;
+        if (el && el.srcObject !== stream) el.srcObject = stream;
+      }}
+    />
+    <canvas ref={canvasRef} style={{ width: 2, height: 2 }} />
     </div>
   );
 }
