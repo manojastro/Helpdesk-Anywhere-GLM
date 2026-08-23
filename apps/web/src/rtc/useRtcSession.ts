@@ -61,12 +61,22 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
     if (!opts.sessionId || !opts.signallingToken) return;
 
     void (async () => {
-      const { iceServers } = await api.getIceConfig().catch(() => ({
+      const { iceServers, hasTurn } = await api.getIceConfig().catch(() => ({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+        hasTurn: false,
       }));
       if (disposed) return;
 
-      const peer = new PeerSession(opts.role, { iceServers }, {
+      // Forced-relay validation (Phase 6): add relay=1 to the URL hash to make
+      // this peer REFUSE host/srflx candidates and go through TURN only.
+      const forceRelay = window.location.hash.includes('relay=1');
+      const config: RTCConfiguration = { iceServers };
+      if (forceRelay && hasTurn) {
+        config.iceTransportPolicy = 'relay';
+        console.info('[poc] forced RELAY mode active');
+      }
+
+      const peer = new PeerSession(opts.role, config, {
         onState: (state) => setConnState(state ?? 'idle'),
         onLocalSdp: (sdp) => {
           // Gate on peer presence — sending into an empty room loses the offer

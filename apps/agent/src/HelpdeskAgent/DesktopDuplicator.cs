@@ -152,13 +152,20 @@ public sealed class DesktopDuplicator : IDisposable
         {
             try
             {
-                var result = _duplication!.AcquireNextFrame(
+                var duplication = _duplication;
+                if (duplication is null)
+                {
+                    // Reinitialise() is running (or failed); retry shortly.
+                    Thread.Sleep(500);
+                    continue;
+                }
+                var result = duplication.AcquireNextFrame(
                     (uint)(frameInterval.TotalMilliseconds * 2), out var info, out var desktopResource);
                 if (result.Success)
                 {
                     try
                     {
-                        if (info.LastPresentTime != 0 || frames == 0 || info.AccumulatedFrames > 0)
+                        if (_forceNextFrame || info.LastPresentTime != 0 || frames == 0 || info.AccumulatedFrames > 0)
                         {
                             using var frameTex = desktopResource.QueryInterface<ID3D11Texture2D>();
                             EnsureStaging(frameTex);
@@ -176,6 +183,7 @@ public sealed class DesktopDuplicator : IDisposable
                                 }
                                 OnFrame?.Invoke(Width, Height, (int)rowPitch, pixels);
                                 frames++;
+                                _forceNextFrame = false;
                             }
                             finally
                             {
@@ -187,7 +195,8 @@ public sealed class DesktopDuplicator : IDisposable
                     {
                         // Always release, even if frame processing threw — otherwise
                         // the next AcquireNextFrame fails with DXGI_ERROR_INVALID_CALL.
-                        _duplication.ReleaseFrame();
+                        try { duplication.ReleaseFrame(); }
+                        catch { /* duplication replaced mid-frame */ }
                     }
                 }
                 else if (result == Result.WaitTimeout)
@@ -196,7 +205,7 @@ public sealed class DesktopDuplicator : IDisposable
                 }
                 else if (result.Code == unchecked((int)0x887A0026)) // DXGI_ERROR_ACCESS_LOST
                 {
-                    _log.LogWarning("DXGI access lost — attempting re-init");
+                    _log.LogWarning("DXGI access lost (secure desktop / mode change) — re-initialising");
                     Reinitialise();
                 }
                 else
@@ -248,27 +257,48 @@ public sealed class DesktopDuplicator : IDisposable
 
     private void Reinitialise()
     {
-        try
+        var attempt = 0;
+        while (_cts?.IsCancellationRequested == false)
         {
-            _duplication?.Dispose();
-            var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
-            factory.EnumAdapters1(_selectedAdapter, out var adapter);
-            adapter.EnumOutputs(_selectedOutput, out var output);
-            var output1 = output.QueryInterface<IDXGIOutput1>();
-            _duplication = output1.DuplicateOutput(_device!);
-            output1.Dispose();
-            output.Dispose();
-            adapter.Dispose();
-            factory.Dispose();
-        }
-        catch (Exception ex)
-        {
-            _log.LogError(ex, "DXGI re-init failed");
+            attempt++;
+            IDXGIOutputDuplication? replacement = null;
+            try
+            {
+                var factory = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
+                factory.EnumAdapters1(_selectedAdapter, out var adapter);
+                adapter.EnumOutputs(_selectedOutput, out var output);
+                var output1 = output.QueryInterface<IDXGIOutput1>();
+                replacement = output1.DuplicateOutput(_device!);
+                output1.Dispose();
+                output.Dispose();
+                adapter.Dispose();
+                factory.Dispose();
+
+                if (replacement is not null)
+                {
+                    var old = _duplication;
+                    _duplication = replacement;
+                    try { old?.Dispose(); } catch { /* replaced */ }
+                    _forceNextFrame = true;
+                    _log.LogInformation("DXGI duplication recovered (attempt {N})", attempt);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                replacement?.Dispose();
+                if (attempt == 1 || attempt % 10 == 0)
+                {
+                    _log.LogWarning("DXGI re-init attempt {N} failed: {Msg}", attempt, ex.Message);
+                }
+            }
+            Thread.Sleep(1000);
         }
     }
 
     private uint _selectedAdapter;
     private uint _selectedOutput;
+    private volatile bool _forceNextFrame = true;
 
     public void Dispose()
     {
