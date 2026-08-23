@@ -17,6 +17,13 @@ export const SIGNAL_EVENTS = {
 
 export type PeerRole = 'technician' | 'endpoint';
 
+/** Subset of W3C RTCIceServer applicable to both browser and .NET agent. */
+export interface RTCIceServer {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+}
+
 export interface SdpPayload {
   type: 'offer' | 'answer';
   sdp: string;

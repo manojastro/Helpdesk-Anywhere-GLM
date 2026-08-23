@@ -1,2 +1,2 @@
-export * from './signalling.js';
-export * from './control.js';
+export * from './signalling';
+export * from './control';
