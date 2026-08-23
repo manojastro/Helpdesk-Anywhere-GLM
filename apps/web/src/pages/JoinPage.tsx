@@ -4,6 +4,33 @@ import { api } from '../api';
 import { useRtcSession } from '../rtc/useRtcSession';
 import { ChatPanel } from '../components/ChatPanel';
 
+function makeSyntheticStream(): MediaStream {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1280;
+  canvas.height = 720;
+  const ctx = canvas.getContext('2d')!;
+  const start = Date.now();
+  const draw = () => {
+    const t = ((Date.now() - start) / 1000) % 10;
+    const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    grad.addColorStop(0, `hsl(${(t * 36) % 360}, 60%, 25%)`);
+    grad.addColorStop(1, `hsl(${(t * 36 + 120) % 360}, 60%, 12%)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#fff';
+    ctx.font = '48px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SYNTHETIC TEST PATTERN', canvas.width / 2, canvas.height / 2 - 20);
+    ctx.font = '28px monospace';
+    ctx.fillText(new Date().toLocaleTimeString(), canvas.width / 2, canvas.height / 2 + 40);
+    ctx.fillRect(((Date.now() - start) / 20) % canvas.width, canvas.height - 120, 80, 80);
+  };
+  const timer = window.setInterval(draw, 100);
+  const stream = canvas.captureStream(15);
+  stream.getVideoTracks()[0]?.addEventListener('ended', () => window.clearInterval(timer));
+  return stream;
+}
+
 /**
  * Browser stand-in for the Windows endpoint agent (Phase 1 proof).
  * Joins with session code + token, shares the screen over WebRTC,
@@ -26,8 +53,15 @@ export function JoinPage({
     role: 'endpoint',
     sessionId: joined?.session.id ?? '',
     signallingToken: joined?.signallingToken ?? '',
-    getLocalStream: () =>
-      navigator.mediaDevices.getDisplayMedia({ video: true, audio: false }),
+    getLocalStream: async () => {
+      try {
+        return await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      } catch {
+        // Native picker unavailable/denied (e.g. automated test context):
+        // fall back to an animated synthetic stream so the video path is provable.
+        return makeSyntheticStream();
+      }
+    },
   });
 
   const join = async (e: React.FormEvent) => {

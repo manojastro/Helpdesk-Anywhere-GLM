@@ -55,6 +55,9 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
     let disposed = false;
     let localStream: MediaStream | null = null;
 
+    // Idle until the session + signalling token exist (prevents empty-payload joins).
+    if (!opts.sessionId || !opts.signallingToken) return;
+
     void (async () => {
       const { iceServers } = await api.getIceConfig().catch(() => ({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
