@@ -8,6 +8,16 @@ if (args.Length == 1 && args[0] == "--dump-api")
     return 0;
 }
 
+if (args.Contains("--input-test"))
+{
+    var tlog = new ConsoleLogger();
+    tlog.LogInformation("=== SendInput self-test (non-destructive) ===");
+    var injector = new InputInjector(tlog);
+    var ok = injector.SelfTest();
+    tlog.LogInformation("SELF-TEST {Result}", ok ? "PASSED" : "FAILED");
+    return ok ? 0 : 1;
+}
+
 // ---- Minimal console logger (no extra packages for the POC agent) ----
 var log = new ConsoleLogger();
 
@@ -93,8 +103,8 @@ else
            && DateTimeOffset.UtcNow - started < TimeSpan.FromMinutes(10))
     {
         await Task.Delay(2000, cts.Token);
-        log.LogInformation("status: state={State} dcOpen={DcOpen} chatRx={ChatRx} frames={Frames} encoded={Enc} lastSz={Sz}",
-            session.State, session.DataChannelOpen, chatLog.Count, session.FramesCaptured, session.EncodedCount, session.LastEncodedSize);
+        log.LogInformation("status: state={State} dcOpen={DcOpen} chatRx={ChatRx} frames={Frames} encoded={Enc} lastSz={Sz} inputs={In}",
+            session.State, session.DataChannelOpen, chatLog.Count, session.FramesCaptured, session.EncodedCount, session.LastEncodedSize, session.InjectedInputs);
     }
 }
 

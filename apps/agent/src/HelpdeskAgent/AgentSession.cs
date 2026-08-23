@@ -21,6 +21,7 @@ public sealed class AgentSession : IAsyncDisposable
 
     private DesktopDuplicator? _capture;
     private GdiCapture? _gdiCapture;
+    private readonly InputInjector _input;
     private Vp8NetVideoEncoderEndPoint? _videoSource;
     private long _framesSent;
     private long _encodedCount;
@@ -38,11 +39,13 @@ public sealed class AgentSession : IAsyncDisposable
     public long FramesCaptured => _framesSent;
     public long EncodedCount => _encodedCount;
     public int LastEncodedSize => _lastEncodedSize;
+    public long InjectedInputs => _input.InjectedCount;
 
     public AgentSession(SignallingClient signalling, ILogger log)
     {
         _log = log;
         _signalling = signalling;
+        _input = new InputInjector(log);
 
         _signalling.OnSdp += sdp => _ = HandleRemoteSdpAsync(sdp.Sdp);
         _signalling.OnIce += cand => _ = HandleRemoteIceAsync(cand.Candidate);
@@ -333,11 +336,35 @@ public sealed class AgentSession : IAsyncDisposable
                     break;
                 }
                 case "mouse_move":
-                case "mouse_click":
-                case "mouse_wheel":
-                case "key":
-                    _log.LogTrace("control message {Type} (input injection not yet active)", typeEl.GetString());
+                {
+                    var x = root.TryGetProperty("x", out var xe) ? xe.GetDouble() : -1;
+                    var y = root.TryGetProperty("y", out var ye) ? ye.GetDouble() : -1;
+                    if (x is >= 0.0 and <= 1.0 && y is >= 0.0 and <= 1.0)
+                    {
+                        _input.MouseMove(x, y);
+                    }
                     break;
+                }
+                case "mouse_click":
+                {
+                    var button = root.TryGetProperty("button", out var b) ? b.GetString() : "left";
+                    var state = root.TryGetProperty("state", out var st) ? st.GetString() : "down";
+                    _input.MouseClick(button ?? "left", state == "down");
+                    break;
+                }
+                case "mouse_wheel":
+                {
+                    var delta = root.TryGetProperty("delta", out var d) ? d.GetDouble() : 0;
+                    _input.MouseWheel(delta);
+                    break;
+                }
+                case "key":
+                {
+                    var code = root.TryGetProperty("code", out var c) ? c.GetString() : "";
+                    var state = root.TryGetProperty("state", out var st2) ? st2.GetString() : "down";
+                    if (!string.IsNullOrEmpty(code)) _input.Key(code, state == "down");
+                    break;
+                }
                 default:
                     _log.LogDebug("unknown control message type {Type}", typeEl.GetString());
                     break;
