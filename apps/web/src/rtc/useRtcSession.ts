@@ -146,6 +146,10 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
       sigRef.current?.close();
       sigRef.current = null;
       peerPresentRef.current = false;
+      chatRef.current = [];
+      setChat([]);
+      setDataChannelOpen(false);
+      setRemoteStream(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.sessionId, opts.signallingToken, opts.role]);
