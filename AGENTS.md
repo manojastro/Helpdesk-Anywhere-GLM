@@ -38,17 +38,17 @@ The current repository already contains reusable, cloud-agnostic work:
 - `apps/agent`: scaffold only; the real .NET Windows endpoint agent is not yet implemented.
 - `infra/`: GCP infrastructure is not yet complete.
 
-**Progress status:**
+**Progress status (updated 2026-08-23 — see docs/POC_VERIFICATION.md):**
 
-- Phase 0 — Repository scaffold: ✅ DONE
-- Phase 1 — Browser-to-browser WebRTC: ✅ DONE
-- Phase 2 — Windows agent WebRTC: 🔨 CURRENT / NEXT
-- Phase 3 — Windows screen streaming: ⏳ PENDING
-- Phase 4 — Remote control: ⏳ PENDING
-- Phase 5 — Chat integration: ⏳ PENDING
-- Phase 6 — TURN fallback: ⏳ PENDING
-- Phase 7 — UAC / Secure Desktop feasibility spike: ⏳ PENDING
-- Phase 8 — POC integration: ⏳ PENDING
+- Phase 0 — Repository scaffold: ✅ DONE (rebuilt in this workspace; original repo was not present)
+- Phase 1 — Browser WebRTC + control plane: ✅ DONE (21/21 e2e tests)
+- Phase 2 — Windows agent WebRTC (SIPSorcery): ✅ DONE — DataChannel verified bidirectionally
+- Phase 3 — Windows screen streaming (DXGI→VP8): ✅ DONE — 10-min stable, content-proven
+- Phase 4 — Remote control (SendInput): ✅ DONE — injection verified (self-test + live)
+- Phase 5 — Chat: ✅ DONE — bidirectional with timestamps over DataChannel
+- Phase 6 — TURN fallback: ⚠️ CODE + INFRA READY, forced-relay NOT RUN (no TURN server/GCP creds in environment)
+- Phase 7 — UAC / Secure Desktop spike: ✅ DONE — docs/uac-spike-findings.md (support NOT claimed)
+- Phase 8 — POC integration: ✅ DONE — full acceptance scenario verified
 
 Do not skip Phase 2 on the assumption that it is already complete.
 
