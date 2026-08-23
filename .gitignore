@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+serviceAccount*.json
+gcp-key*.json
+
+# Test coverage
+coverage/
+
+# Logs & debug
+*.log
+logs/
+npm-debug.log*
+
+# Databases (local dev)
+*.sqlite
+*.sqlite3
+*.db
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
