@@ -47,6 +47,38 @@ Self-test of the input path only (non-destructive, no session needed):
 dotnet run --project src/HelpdeskAgent -- --input-test
 ```
 
+## Remote control
+
+The technician console captures mouse and keyboard and sends them over the
+WebRTC DataChannel as normalized 0..1 coordinates (`packages/shared/src/control.ts`).
+
+**Only the .NET Windows agent can actually control a machine.** The browser
+`#/join` page is a stand-in for proving the WebRTC path: a web page cannot
+inject input into Windows, so it *visualises* the technician's mouse and
+keyboard instead of acting on them. If you test with two browser tabs, screen
+sharing works and control appears to do nothing — that is expected. Use the
+agent for real control.
+
+Supported from the console: pointer move, left/middle/right press and release,
+drag, wheel, and full keyboard including modifiers, with `Ctrl+Alt+Del`, `Win`,
+`Alt+Tab` and `Esc` toolbar buttons. A **Remote control** toggle switches the
+session to view-only.
+
+Notes and limits:
+
+- Keyboard is captured at the window, so it keeps working regardless of which
+  element has focus — except while you are typing in the chat box.
+- Browser-reserved shortcuts (`Ctrl+W`, `Ctrl+T`, `F5`, `F12`, …) are swallowed
+  and forwarded to the remote machine instead.
+- Keys and buttons held down are released automatically if the console loses
+  focus, so nothing sticks down on the endpoint.
+- `Ctrl+Alt+Del` is sent, but Windows reserves the Secure Attention Sequence:
+  an ordinary unelevated agent **cannot** trigger it, and the key sequence will
+  be ignored. The same applies during a UAC prompt — see
+  `docs/uac-spike-findings.md`.
+- Wheel delta uses the Windows convention (positive = scroll up), which is the
+  opposite sign to the browser's `WheelEvent.deltaY`.
+
 ## Deploying the web console
 
 The console is a static Vite bundle (`npm run build -w apps/web` → `apps/web/dist`).

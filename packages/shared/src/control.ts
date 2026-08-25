@@ -34,7 +34,12 @@ export interface MouseClickMessage {
 
 export interface MouseWheelMessage {
   type: 'mouse_wheel';
-  /** Positive scrolls down (Windows wheel delta convention). */
+  /**
+   * Windows WHEEL_DELTA units (120 per notch), passed straight to SendInput's
+   * mouseData. Windows convention: POSITIVE = wheel rotated away from the user
+   * = content scrolls UP. Note this is the opposite sign to the browser's
+   * WheelEvent.deltaY, where positive means scrolling down.
+   */
   delta: number;
 }
 

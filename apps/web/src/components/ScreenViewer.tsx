@@ -1,32 +1,35 @@
 import { useEffect, useRef } from 'react';
-import type { ControlMessage, MouseButton } from '@helpdesk/shared';
+import type { ControlMessage } from '@helpdesk/shared';
+import { useRemoteInput } from '../rtc/useRemoteInput';
 
 interface Props {
   stream: MediaStream | null;
   connected: boolean;
-  onControl?: (msg: ControlMessage) => void;
+  onControl?: (msg: ControlMessage) => boolean;
   /** Disable input capture (e.g. view-only). */
   inputEnabled?: boolean;
   /** Fires when the browser presents a new video frame to the compositor. */
   onFramePresented?: () => void;
 }
 
-function relPos(e: React.MouseEvent<HTMLVideoElement>, el: HTMLVideoElement): { x: number; y: number } {
-  const rect = el.getBoundingClientRect();
-  return {
-    x: Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)),
-    y: Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height)),
-  };
-}
-
-const BUTTON_MAP: Record<number, MouseButton> = { 0: 'left', 1: 'middle', 2: 'right' };
-
 /**
  * Remote screen renderer + normalized input capture.
  * Coordinates are normalized 0..1 so the endpoint can map to any resolution/DPI.
  */
-export function ScreenViewer({ stream, connected, onControl, inputEnabled = true, onFramePresented }: Props) {
+export function ScreenViewer({
+  stream,
+  connected,
+  onControl,
+  inputEnabled = true,
+  onFramePresented,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  const { handlers } = useRemoteInput({
+    send: (msg) => onControl?.(msg) ?? false,
+    enabled: inputEnabled && connected && !!stream,
+    surfaceRef: videoRef,
+  });
 
   useEffect(() => {
     const el = videoRef.current;
@@ -88,55 +91,15 @@ export function ScreenViewer({ stream, connected, onControl, inputEnabled = true
     );
   }
 
-  const send = (msg: ControlMessage) => {
-    if (inputEnabled) onControl?.(msg);
-  };
-
-  const onKeyDown = (e: React.KeyboardEvent<HTMLVideoElement>) => {
-    if (!inputEnabled) return;
-    e.preventDefault();
-    if (e.repeat) return;
-    send({ type: 'key', code: e.code, state: 'down' });
-  };
-  const onKeyUp = (e: React.KeyboardEvent<HTMLVideoElement>) => {
-    if (!inputEnabled) return;
-    e.preventDefault();
-    send({ type: 'key', code: e.code, state: 'up' });
-  };
-
   return (
-    <div className="stage">
+    <div className={`stage${inputEnabled ? ' is-controllable' : ''}`}>
       <video
         ref={videoRef}
         autoPlay
         muted
         playsInline
         tabIndex={0}
-        onMouseMove={(e) => send({ type: 'mouse_move', ...relPos(e, e.currentTarget) })}
-        onMouseDown={(e) => {
-          e.currentTarget.focus();
-          send({
-            type: 'mouse_click',
-            button: BUTTON_MAP[e.button] ?? 'left',
-            state: 'down',
-            ...relPos(e, e.currentTarget),
-          });
-        }}
-        onMouseUp={(e) =>
-          send({
-            type: 'mouse_click',
-            button: BUTTON_MAP[e.button] ?? 'left',
-            state: 'up',
-            ...relPos(e, e.currentTarget),
-          })
-        }
-        onContextMenu={(e) => e.preventDefault()}
-        onWheel={(e) => {
-          e.preventDefault();
-          send({ type: 'mouse_wheel', delta: Math.sign(e.deltaY) * 120 });
-        }}
-        onKeyDown={onKeyDown}
-        onKeyUp={onKeyUp}
+        {...handlers}
       />
     </div>
   );

@@ -14,6 +14,7 @@ export function ConsolePage({ onLogout }: { onLogout: () => void }) {
   const [copied, setCopied] = useState(false);
   const [framesPresented, setFramesPresented] = useState(0);
   const [videoDebug, setVideoDebug] = useState('');
+  const [controlEnabled, setControlEnabled] = useState(true);
 
   const rtc = useRtcSession({
     role: 'technician',
@@ -69,6 +70,14 @@ export function ConsolePage({ onLogout }: { onLogout: () => void }) {
   const joinLink = created
     ? `${window.location.origin}${window.location.pathname}#/join?code=${created.session.code}&token=${encodeURIComponent(created.joinToken)}`
     : '';
+
+  /** Press a key combination in order, then release it in reverse. */
+  const sendChord = (codes: string[]) => {
+    for (const code of codes) rtc.sendControl({ type: 'key', code, state: 'down' });
+    for (const code of [...codes].reverse()) {
+      rtc.sendControl({ type: 'key', code, state: 'up' });
+    }
+  };
 
   return (
     <div className="app-shell">
@@ -148,10 +157,56 @@ export function ConsolePage({ onLogout }: { onLogout: () => void }) {
                 Session <span className="mono">{created?.session.code}</span>
               </span>
             </div>
+            <div className="control-bar">
+              <label className="toggle">
+                <input
+                  type="checkbox"
+                  checked={controlEnabled}
+                  onChange={(e) => setControlEnabled(e.target.checked)}
+                />
+                Remote control
+              </label>
+              <span className="control-hint">
+                {controlEnabled
+                  ? 'Mouse and keyboard are sent to the endpoint.'
+                  : 'View only — input is not sent.'}
+              </span>
+              <span className="spacer" />
+              <button
+                className="ghost"
+                disabled={!controlEnabled || !rtc.dataChannelOpen}
+                onClick={() => sendChord(['ControlLeft', 'AltLeft', 'Delete'])}
+                title="Windows reserves Ctrl+Alt+Del for the Secure Attention Sequence; an unelevated agent cannot trigger it."
+              >
+                Ctrl+Alt+Del
+              </button>
+              <button
+                className="ghost"
+                disabled={!controlEnabled || !rtc.dataChannelOpen}
+                onClick={() => sendChord(['MetaLeft'])}
+              >
+                Win
+              </button>
+              <button
+                className="ghost"
+                disabled={!controlEnabled || !rtc.dataChannelOpen}
+                onClick={() => sendChord(['AltLeft', 'Tab'])}
+              >
+                Alt+Tab
+              </button>
+              <button
+                className="ghost"
+                disabled={!controlEnabled || !rtc.dataChannelOpen}
+                onClick={() => sendChord(['Escape'])}
+              >
+                Esc
+              </button>
+            </div>
             <ScreenViewer
               stream={rtc.remoteStream}
               connected={rtc.connState === 'connected'}
               onControl={rtc.sendControl}
+              inputEnabled={controlEnabled}
               onFramePresented={() => setFramesPresented((n) => n + 1)}
             />
             <p className="statline">

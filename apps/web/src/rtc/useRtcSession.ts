@@ -14,6 +14,18 @@ export interface RtcSessionOptions {
   createControlChannel?: boolean;
 }
 
+/** Last remote-control command seen by an endpoint, for on-screen feedback. */
+export interface RemoteInputEcho {
+  /** Normalized pointer position, when the last command carried one. */
+  x: number;
+  y: number;
+  /** Human-readable description of the most recent command. */
+  label: string;
+  /** Total control commands received this session. */
+  count: number;
+  ts: number;
+}
+
 export interface RtcSessionState {
   connState: ConnState;
   peerPresent: boolean;
@@ -22,6 +34,8 @@ export interface RtcSessionState {
   dataChannelOpen: boolean;
   error: string | null;
   videoStats: string | null;
+  /** Endpoint side: the technician's most recent input command. */
+  remoteInput: RemoteInputEcho | null;
   sendChat: (text: string) => void;
   sendControl: (msg: ControlMessage) => boolean;
   disconnect: () => void;
@@ -40,6 +54,9 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
   const [dataChannelOpen, setDataChannelOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [videoStats, setVideoStats] = useState<string | null>(null);
+  const [remoteInput, setRemoteInput] = useState<RemoteInputEcho | null>(null);
+  const inputCount = useRef(0);
+  const lastPos = useRef({ x: 0.5, y: 0.5 });
 
   const peerRef = useRef<PeerSession | null>(null);
   const sigRef = useRef<SignallingClient | null>(null);
@@ -99,7 +116,43 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
         onDataChannelOpen: () => setDataChannelOpen(true),
         onDataChannelClose: () => setDataChannelOpen(false),
         onControlMessage: (msg) => {
-          if (msg.type === 'chat') appendChat(msg);
+          if (msg.type === 'chat') {
+            appendChat(msg);
+            return;
+          }
+          // A browser endpoint cannot inject OS input, so these used to be
+          // dropped in silence — which looked exactly like remote control
+          // being broken. Surface them instead: the browser stand-in shows
+          // what the technician is doing, and the .NET agent injects it.
+          inputCount.current += 1;
+          let label: string;
+          switch (msg.type) {
+            case 'mouse_move':
+              lastPos.current = { x: msg.x, y: msg.y };
+              label = `move ${(msg.x * 100).toFixed(0)}%, ${(msg.y * 100).toFixed(0)}%`;
+              break;
+            case 'mouse_click':
+              if (typeof msg.x === 'number' && typeof msg.y === 'number') {
+                lastPos.current = { x: msg.x, y: msg.y };
+              }
+              label = `${msg.button} button ${msg.state}`;
+              break;
+            case 'mouse_wheel':
+              label = `wheel ${msg.delta > 0 ? 'up' : 'down'}`;
+              break;
+            case 'key':
+              label = `key ${msg.code} ${msg.state}`;
+              break;
+            default:
+              label = 'unknown command';
+          }
+          setRemoteInput({
+            x: lastPos.current.x,
+            y: lastPos.current.y,
+            label,
+            count: inputCount.current,
+            ts: Date.now(),
+          });
         },
         onTrack: (stream) => setRemoteStream(stream),
       });
@@ -162,6 +215,8 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
       setChat([]);
       setDataChannelOpen(false);
       setRemoteStream(null);
+      inputCount.current = 0;
+      setRemoteInput(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.sessionId, opts.signallingToken, opts.role]);
@@ -206,6 +261,7 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
     dataChannelOpen,
     error,
     videoStats,
+    remoteInput,
     sendChat,
     sendControl,
     disconnect,

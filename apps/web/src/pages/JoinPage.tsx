@@ -147,6 +147,36 @@ export function JoinPage({
             >
               Stop sharing
             </button>
+
+            <div className="control-echo">
+              <div className="control-echo-head">
+                <span>Remote control</span>
+                <span className="mono">{rtc.remoteInput?.count ?? 0} commands</span>
+              </div>
+              <div className="control-echo-surface">
+                {rtc.remoteInput ? (
+                  <span
+                    className="control-echo-cursor"
+                    style={{
+                      left: `${rtc.remoteInput.x * 100}%`,
+                      top: `${rtc.remoteInput.y * 100}%`,
+                    }}
+                  />
+                ) : (
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    No input received yet
+                  </span>
+                )}
+              </div>
+              <p className="control-echo-label mono">
+                {rtc.remoteInput?.label ?? 'idle'}
+              </p>
+              <p className="control-echo-note">
+                This browser tab can only <strong>visualise</strong> the technician&apos;s
+                mouse and keyboard. A web page cannot inject input into Windows —
+                actual remote control requires the .NET endpoint agent.
+              </p>
+            </div>
           </div>
           <div className="card chat-card">
             <div className="chat-head">
