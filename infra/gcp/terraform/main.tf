@@ -31,9 +31,11 @@ resource "google_sql_database_instance" "backend" {
       # overkill; use private-path via vpc when moving past POC.
       authorized_networks {
         name = "cloud-run-egress"
-        # Set to your Cloud Run egress range in production; POC default is open
-        # to the internet but the DB still requires SSL + password.
-        value = "0.0.0.0/0"
+        # Closed by default (see var.db_authorized_network). Widen it only to
+        # the specific address you connect from; the DB still requires SSL +
+        # password, but a publicly reachable Postgres port is not acceptable
+        # even for a POC.
+        value = var.db_authorized_network
       }
       require_ssl = true
     }

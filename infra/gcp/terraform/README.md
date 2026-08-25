@@ -29,6 +29,9 @@ terraform apply \
   -var="jwt_secret=$(openssl rand -hex 32)"
 ```
 
+Add `-var="db_authorized_network=<your.ip>/32"` if you need to reach Cloud SQL
+directly; it is closed by default.
+
 Outputs: backend URL + TURN address. Set the same TURN secret as the agent's
 `TURN_CREDENTIAL` and username `helpdesk`.
 
@@ -61,9 +64,17 @@ working POC fallback path.
 
 ## Notes / known POC shortcuts
 
-- Cloud SQL uses public IP + SSL + authorized networks (0.0.0.0/0) — move to
-  private IP + VPC connector before any real usage.
+- Cloud SQL uses public IP + SSL, with the authorized network closed by default
+  (`var.db_authorized_network`) — move to private IP + VPC connector before any
+  real usage.
 - Cloud Run is pinned to `max_instance_count = 1` with `session_affinity`
   because signalling room state is an in-memory Map. Lifting the cap requires
   moving that state to Redis (or the socket.io Redis adapter) first.
+- The Cloud Run service account still needs `roles/secretmanager.secretAccessor`
+  on the JWT and TURN secrets; this config does not grant it, so add the binding
+  (or grant it manually) before the first deploy.
 - TURN relay port range is narrowed (49160-49200) for POC firewall simplicity.
+- The backend does not auto-create its schema when `NODE_ENV=production`. There
+  are no TypeORM migrations in this POC yet, so the first deploy against the
+  empty Cloud SQL database needs `DB_SYNCHRONIZE=true` for one boot; remove it
+  afterwards, since it can drop columns and data on later deploys.

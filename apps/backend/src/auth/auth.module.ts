@@ -3,13 +3,14 @@ import { JwtModule } from '@nestjs/jwt';
 import { TechniciansModule } from '../technicians/technicians.module';
 import { AuthController } from './auth.controller';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { getJwtSecret } from './jwt-secret';
 
 @Module({
   imports: [
     TechniciansModule,
     JwtModule.registerAsync({
       useFactory: () => ({
-        secret: process.env.JWT_SECRET ?? 'helpdesk-poc-dev-secret-change-me',
+        secret: getJwtSecret(),
         signOptions: { expiresIn: '12h' },
       }),
     }),

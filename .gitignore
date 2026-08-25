@@ -27,6 +27,7 @@ gcp-key*.json
 
 # Terraform working files
 .terraform/
+.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 *.tfvars

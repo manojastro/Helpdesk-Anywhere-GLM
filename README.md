@@ -24,12 +24,27 @@ npm run dev:web       # Vite on :5173
 ```
 
 The Vite dev server proxies `/api` and `/socket.io` to `localhost:4000`, so no
-configuration is needed for local work.
+configuration is needed for local work. See `.env.example` for every environment
+variable the backend, console and agent read, and their defaults.
 
-Windows agent (from `apps/agent`):
+### Windows endpoint agent
+
+Requires **Windows** and the **.NET 8 SDK** — the agent targets
+`net8.0-windows` and uses WinForms, DXGI Desktop Duplication and `SendInput`,
+so it does not build or run on Linux or macOS.
+
+`--code` and `--token` are mandatory; without them the agent prints usage and
+exits with code 2. Create a session in the console first and take the code and
+join token from the join link.
 
 ```bash
-dotnet run --project src/HelpdeskAgent
+dotnet run --project src/HelpdeskAgent -- --server http://localhost:4000 --code ABC123 --token <joinToken>
+```
+
+Self-test of the input path only (non-destructive, no session needed):
+
+```bash
+dotnet run --project src/HelpdeskAgent -- --input-test
 ```
 
 ## Deploying the web console

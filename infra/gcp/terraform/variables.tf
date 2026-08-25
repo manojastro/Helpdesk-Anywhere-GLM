@@ -31,3 +31,14 @@ variable "jwt_secret" {
   type        = string
   sensitive   = true
 }
+
+variable "db_authorized_network" {
+  description = <<-EOT
+    CIDR allowed to reach the Cloud SQL public IP. The default is closed on
+    purpose — set it to the address you actually connect from (e.g. your admin
+    IP as "203.0.113.4/32"), or move to a private IP + VPC connector, which is
+    what any real deployment should do. Never set this to 0.0.0.0/0.
+  EOT
+  type        = string
+  default     = "127.0.0.1/32"
+}

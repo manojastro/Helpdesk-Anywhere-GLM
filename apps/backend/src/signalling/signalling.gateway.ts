@@ -19,6 +19,7 @@ import {
 import { SessionsService } from '../sessions/sessions.service';
 import { AuditService } from '../audit/audit.service';
 import { SessionRoomsService } from './session-rooms.service';
+import { corsOrigin } from '../cors';
 
 interface AuthedSocket extends Socket {
   data: { sessionId?: string; role?: PeerRole };
@@ -32,7 +33,7 @@ function peerTag(role: PeerRole, socketId: string): string {
  * socket.io signalling relay: SDP + ICE only. Never touches media payloads.
  * Event names are locked — see docs/signalling-protocol.md.
  */
-@WebSocketGateway({ path: '/socket.io', cors: { origin: true, credentials: true } })
+@WebSocketGateway({ path: '/socket.io', cors: { origin: corsOrigin(), credentials: true } })
 export class SignallingGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger('Signalling');
 
