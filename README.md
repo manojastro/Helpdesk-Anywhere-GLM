@@ -33,9 +33,30 @@ Requires **Windows** and the **.NET 8 SDK** — the agent targets
 `net8.0-windows` and uses WinForms, DXGI Desktop Duplication and `SendInput`,
 so it does not build or run on Linux or macOS.
 
-`--code` and `--token` are mandatory; without them the agent prints usage and
-exits with code 2. Create a session in the console first and take the code and
-join token from the join link.
+**This is the only endpoint that can actually control a machine.** The browser
+`#/join` page cannot inject input into Windows — see "Remote control" below.
+
+Build it once, then start it from the join link the console shows:
+
+```bash
+dotnet publish src/HelpdeskAgent -c Release -r win-x64 --self-contained false -o publish
+```
+
+```powershell
+.un-agent.ps1 -JoinLink "http://localhost:5173/#/join?code=ABC123&token=..."
+```
+
+`run-agent.ps1` pulls `code` and `token` out of the link and points the agent at
+the backend (port 4000 when the link came from the Vite dev server on 5173).
+Useful switches while testing: `-NoInput` joins without accepting remote
+mouse/keyboard, `-NoVideo` joins without sharing the screen, and `-Gdi` forces
+the GDI capture path when DXGI returns black frames (e.g. over RDP).
+
+While the agent runs it streams that desktop and lets the technician control the
+machine. Ctrl+C stops it.
+
+The raw invocation, if you prefer it — `--code` and `--token` are mandatory and
+without them the agent prints usage and exits with code 2:
 
 ```bash
 dotnet run --project src/HelpdeskAgent -- --server http://localhost:4000 --code ABC123 --token <joinToken>
