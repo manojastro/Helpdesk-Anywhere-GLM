@@ -5,8 +5,7 @@ import type {
   RTCIceServer,
   SessionEventDto,
 } from '@helpdesk/shared';
-
-const API_BASE = '/api';
+import { API_BASE } from './config';
 
 export interface SessionInfo {
   id: string;

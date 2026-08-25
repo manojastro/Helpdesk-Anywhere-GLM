@@ -5,6 +5,7 @@ import {
   type PeerRole,
   type SdpPayload,
 } from '@helpdesk/shared';
+import { SOCKET_ORIGIN } from '../config';
 
 export interface SignallingCallbacks {
   onPeerJoined?: (peer: string) => void;
@@ -25,7 +26,9 @@ export class SignallingClient {
     token: string,
     private readonly cb: SignallingCallbacks,
   ) {
-    this.sock = io({
+    // SOCKET_ORIGIN is '' for a same-origin deployment, which is what
+    // socket.io already assumed; a separate backend host supplies its origin.
+    this.sock = io(SOCKET_ORIGIN, {
       path: '/socket.io',
       transports: ['websocket', 'polling'],
       auth: { sessionId, role },
