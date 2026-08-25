@@ -15,8 +15,17 @@ const HIJACKED_WITH_CTRL = new Set([
   'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Tab',
 ]);
 
-/** Function keys the browser claims (devtools, reload, fullscreen). */
-const HIJACKED_BARE = new Set(['F1', 'F3', 'F5', 'F6', 'F7', 'F10', 'F11', 'F12']);
+/**
+ * Keys the browser or the page would act on locally.
+ *
+ * Tab is here for a subtle reason: unprevented, it moves focus out of the
+ * viewer and into the next control — typically the chat box. From then on
+ * every keystroke is treated as chat input and silently stops reaching the
+ * remote machine, so the keyboard appears to die mid-session.
+ */
+const HIJACKED_BARE = new Set([
+  'F1', 'F3', 'F5', 'F6', 'F7', 'F10', 'F11', 'F12', 'Tab',
+]);
 
 export interface RemoteInputOptions {
   /** Send a control message; returns false when the DataChannel is not open. */
@@ -41,6 +50,7 @@ export function useRemoteInput({ send, enabled, surfaceRef }: RemoteInputOptions
   const heldKeys = useRef<Set<string>>(new Set());
   const heldButtons = useRef<Set<MouseButton>>(new Set());
   const pendingMove = useRef<{ x: number; y: number } | null>(null);
+  const lastSent = useRef<{ x: number; y: number } | null>(null);
   const rafId = useRef<number | null>(null);
   const sendRef = useRef(send);
   sendRef.current = send;
@@ -62,8 +72,41 @@ export function useRemoteInput({ send, enabled, surfaceRef }: RemoteInputOptions
     const p = pendingMove.current;
     if (!p) return;
     pendingMove.current = null;
+    if (lastSent.current && lastSent.current.x === p.x && lastSent.current.y === p.y) return;
+    lastSent.current = { x: p.x, y: p.y };
     sendRef.current({ type: 'mouse_move', x: p.x, y: p.y });
   }, []);
+
+  /**
+   * Send a move immediately, cancelling any frame-coalesced one.
+   *
+   * Buttons and wheel must never overtake the move that positions them: the
+   * endpoint agent applies a click at the cursor's *current* location, so a
+   * click that arrives before its move lands wherever the pointer used to be.
+   */
+  const sendMoveNow = useCallback((x: number, y: number) => {
+    if (rafId.current !== null) {
+      window.cancelAnimationFrame(rafId.current);
+      rafId.current = null;
+    }
+    pendingMove.current = null;
+    // Re-sending a position the remote pointer already holds is pure traffic.
+    const last = lastSent.current;
+    if (last && last.x === x && last.y === y) return;
+    lastSent.current = { x, y };
+    sendRef.current({ type: 'mouse_move', x, y });
+  }, []);
+
+  /** Position the remote pointer before a button or wheel event is sent. */
+  const positionBefore = useCallback(
+    (p: { x: number; y: number } | null) => {
+      if (p) sendMoveNow(p.x, p.y);
+      else if (pendingMove.current) {
+        sendMoveNow(pendingMove.current.x, pendingMove.current.y);
+      }
+    },
+    [sendMoveNow],
+  );
 
   const queueMove = useCallback(
     (x: number, y: number) => {
@@ -158,20 +201,33 @@ export function useRemoteInput({ send, enabled, surfaceRef }: RemoteInputOptions
     onPointerDown: (e: React.PointerEvent) => {
       if (!enabled) return;
       const button = BUTTON_MAP[e.button] ?? 'left';
-      // Capture the pointer so a drag that leaves the surface still tracks.
-      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-      (e.currentTarget as HTMLElement).focus?.();
       const p = relative(e.clientX, e.clientY);
+      // Send first: pointer capture is a nicety, but setPointerCapture throws
+      // NotFoundError for a pointer id the browser does not consider active,
+      // and an exception here would swallow the click entirely.
+      positionBefore(p);
       heldButtons.current.add(button);
       send({ type: 'mouse_click', button, state: 'down', ...(p ?? {}) });
+      try {
+        // Capture the pointer so a drag that leaves the surface still tracks.
+        (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+        (e.currentTarget as HTMLElement).focus?.();
+      } catch {
+        /* capture unavailable — dragging past the edge just stops tracking */
+      }
     },
     onPointerUp: (e: React.PointerEvent) => {
       if (!enabled) return;
       const button = BUTTON_MAP[e.button] ?? 'left';
-      (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
       const p = relative(e.clientX, e.clientY);
+      positionBefore(p);
       heldButtons.current.delete(button);
       send({ type: 'mouse_click', button, state: 'up', ...(p ?? {}) });
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+      } catch {
+        /* nothing was captured */
+      }
     },
     onPointerLeave: () => {
       // Buttons held when the cursor leaves would otherwise stay down remotely.
@@ -184,6 +240,8 @@ export function useRemoteInput({ send, enabled, surfaceRef }: RemoteInputOptions
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
     onWheel: (e: React.WheelEvent) => {
       if (!enabled) return;
+      // Scroll applies under the remote cursor, so position it first.
+      positionBefore(relative(e.clientX, e.clientY));
       // Windows wheel delta is 120 per notch, positive = away from the user.
       send({ type: 'mouse_wheel', delta: -Math.sign(e.deltaY) * 120 });
     },
