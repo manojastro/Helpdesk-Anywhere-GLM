@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ControlMessage, MouseButton } from '@helpdesk/shared';
 
 /** Browser button index → protocol button name. */
@@ -51,6 +51,9 @@ export function useRemoteInput({ send, enabled, surfaceRef }: RemoteInputOptions
   const heldButtons = useRef<Set<MouseButton>>(new Set());
   const pendingMove = useRef<{ x: number; y: number } | null>(null);
   const lastSent = useRef<{ x: number; y: number } | null>(null);
+  /** Virtual pointer position used while the real cursor is locked. */
+  const virtualPos = useRef<{ x: number; y: number }>({ x: 0.5, y: 0.5 });
+  const [pointerLocked, setPointerLocked] = useState(false);
   const rafId = useRef<number | null>(null);
   const sendRef = useRef(send);
   sendRef.current = send;
@@ -191,17 +194,68 @@ export function useRemoteInput({ send, enabled, surfaceRef }: RemoteInputOptions
     [],
   );
 
+  /** Where the remote pointer is: virtual while locked, element-relative otherwise. */
+  const pointRef = useCallback(
+    (e: { clientX: number; clientY: number }) => {
+      const el = surfaceRef.current;
+      if (el && document.pointerLockElement === el) return virtualPos.current;
+      return relative(e.clientX, e.clientY);
+    },
+    [relative, surfaceRef],
+  );
+
+  /** Hide and pin the local cursor, routing movement to the remote machine. */
+  const lockPointer = useCallback(() => {
+    const el = surfaceRef.current;
+    if (!el) return;
+    void (el.requestPointerLock?.() as unknown as Promise<void> | undefined);
+  }, [surfaceRef]);
+
+  useEffect(() => {
+    const onChange = () => {
+      const el = surfaceRef.current;
+      setPointerLocked(!!el && document.pointerLockElement === el);
+    };
+    document.addEventListener('pointerlockchange', onChange);
+    return () => document.removeEventListener('pointerlockchange', onChange);
+  }, [surfaceRef]);
+
+  // Releasing the lock must not strand a held button on the remote machine.
+  useEffect(() => {
+    if (!pointerLocked && heldButtons.current.size > 0) releaseAll();
+  }, [pointerLocked, releaseAll]);
+
   // ---- mouse handlers, spread onto the surface element ----
   const handlers = {
     onPointerMove: (e: React.PointerEvent) => {
       if (!enabled) return;
+      const el = surfaceRef.current;
+      if (el && document.pointerLockElement === el) {
+        // Locked: the OS cursor does not move, so absolute coordinates are
+        // meaningless. Integrate the relative deltas into a virtual position
+        // instead. This is what makes control usable when the technician and
+        // the endpoint are the same machine — an unlocked pointer would be
+        // warped by our own injection and feed back into itself.
+        const r = el.getBoundingClientRect();
+        if (r.width === 0 || r.height === 0) return;
+        const v = virtualPos.current;
+        virtualPos.current = {
+          x: Math.min(1, Math.max(0, v.x + e.movementX / r.width)),
+          y: Math.min(1, Math.max(0, v.y + e.movementY / r.height)),
+        };
+        queueMove(virtualPos.current.x, virtualPos.current.y);
+        return;
+      }
       const p = relative(e.clientX, e.clientY);
-      if (p) queueMove(p.x, p.y);
+      if (p) {
+        virtualPos.current = p;
+        queueMove(p.x, p.y);
+      }
     },
     onPointerDown: (e: React.PointerEvent) => {
       if (!enabled) return;
       const button = BUTTON_MAP[e.button] ?? 'left';
-      const p = relative(e.clientX, e.clientY);
+      const p = pointRef(e);
       // Send first: pointer capture is a nicety, but setPointerCapture throws
       // NotFoundError for a pointer id the browser does not consider active,
       // and an exception here would swallow the click entirely.
@@ -223,7 +277,7 @@ export function useRemoteInput({ send, enabled, surfaceRef }: RemoteInputOptions
     onPointerUp: (e: React.PointerEvent) => {
       if (!enabled) return;
       const button = BUTTON_MAP[e.button] ?? 'left';
-      const p = relative(e.clientX, e.clientY);
+      const p = pointRef(e);
       positionBefore(p);
       heldButtons.current.delete(button);
       send({ type: 'mouse_click', button, state: 'up', ...(p ?? {}) });
@@ -245,7 +299,7 @@ export function useRemoteInput({ send, enabled, surfaceRef }: RemoteInputOptions
     onWheel: (e: React.WheelEvent) => {
       if (!enabled) return;
       // Scroll applies under the remote cursor, so position it first.
-      positionBefore(relative(e.clientX, e.clientY));
+      positionBefore(pointRef(e));
       // Windows wheel delta is 120 per notch, positive = away from the user.
       send({ type: 'mouse_wheel', delta: -Math.sign(e.deltaY) * 120 });
     },
@@ -259,5 +313,5 @@ export function useRemoteInput({ send, enabled, surfaceRef }: RemoteInputOptions
     }
   }, []);
 
-  return { handlers, releaseAll, sendChord };
+  return { handlers, releaseAll, sendChord, lockPointer, pointerLocked };
 }

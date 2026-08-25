@@ -43,7 +43,8 @@ dotnet publish src/HelpdeskAgent -c Release -r win-x64 --self-contained false -o
 ```
 
 ```powershell
-.un-agent.ps1 -JoinLink "http://localhost:5173/#/join?code=ABC123&token=..."
+.
+un-agent.ps1 -JoinLink "http://localhost:5173/#/join?code=ABC123&token=..."
 ```
 
 `run-agent.ps1` pulls `code` and `token` out of the link and points the agent at
@@ -84,6 +85,19 @@ Supported from the console: pointer move, left/middle/right press and release,
 drag, wheel, and full keyboard including modifiers, with `Ctrl+Alt+Del`, `Win`,
 `Alt+Tab` and `Esc` toolbar buttons. A **Remote control** toggle switches the
 session to view-only.
+
+### Pointer lock (required when both ends are one machine)
+
+Click **Lock pointer** on the viewer before taking control. The browser hides
+the local cursor and reports raw movement deltas, which the console integrates
+into a virtual position — so the technician's own cursor never moves. Press
+**Esc** to release it.
+
+Without it, testing on a single computer feeds back on itself: moving over the
+viewer warps the real cursor, the warped cursor lands on the console window
+(which is displaying its own screen), that generates another move, and the
+pointer runs away and appears to vanish. Pointer lock breaks the loop, and it
+is the more precise way to drive a remote machine in any case.
 
 Notes and limits:
 

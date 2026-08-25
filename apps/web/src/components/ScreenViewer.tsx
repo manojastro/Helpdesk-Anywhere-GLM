@@ -25,11 +25,12 @@ export function ScreenViewer({
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const { handlers } = useRemoteInput({
+  const { handlers, lockPointer, pointerLocked } = useRemoteInput({
     send: (msg) => onControl?.(msg) ?? false,
     enabled: inputEnabled && connected && !!stream,
     surfaceRef: videoRef,
   });
+
 
   useEffect(() => {
     const el = videoRef.current;
@@ -101,6 +102,21 @@ export function ScreenViewer({
         tabIndex={0}
         {...handlers}
       />
+      {inputEnabled && (
+        <button
+          type="button"
+          className={`lock-pill${pointerLocked ? ' is-locked' : ''}`}
+          onClick={lockPointer}
+          disabled={pointerLocked}
+          title={
+            pointerLocked
+              ? 'Your cursor is hidden and driving the remote machine. Press Esc to release it.'
+              : 'Hide the local cursor and send raw movement to the remote machine. Essential when the technician and endpoint are the same computer.'
+          }
+        >
+          {pointerLocked ? 'Pointer locked — Esc to release' : 'Lock pointer'}
+        </button>
+      )}
     </div>
   );
 }
