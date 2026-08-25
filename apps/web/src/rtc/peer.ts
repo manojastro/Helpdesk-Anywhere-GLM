@@ -145,6 +145,13 @@ export class PeerSession {
     this.ignoreOffer = !this.polite && offerCollision;
     if (this.ignoreOffer) return;
 
+    // Perfect negotiation: on a collision the polite peer yields by rolling
+    // its own offer back first. Chrome can do this implicitly, but rolling
+    // back explicitly keeps the state machine predictable across browsers.
+    if (offerCollision && this.pc.signalingState === 'have-local-offer') {
+      await this.pc.setLocalDescription({ type: 'rollback' });
+    }
+
     await this.pc.setRemoteDescription(description);
     if (description.type === 'offer') {
       await this.pc.setLocalDescription();
@@ -153,9 +160,24 @@ export class PeerSession {
     }
   }
 
+  /**
+   * True when there is actually something to negotiate. A peer with no
+   * transceivers and no DataChannel produces an offer with ZERO m-lines, and
+   * applying that to a peer that already negotiated m-lines fails with
+   * "The order of m-lines in subsequent offer doesn't match order from
+   * previous offer/answer" — which kills the session.
+   */
+  hasNegotiableMedia(): boolean {
+    return this.pc.getTransceivers().length > 0 || this.dataChannel !== null;
+  }
+
   /** (Re-)emit an offer when stable — used when a peer arrives after media was ready. */
   async forceOffer(): Promise<void> {
     if (this.pc.signalingState !== 'stable') return;
+    // The endpoint reaches this while the user is still picking a screen in
+    // the getDisplayMedia dialog, when it has nothing to offer yet. Staying
+    // quiet is correct: adding the track fires negotiationneeded later.
+    if (!this.hasNegotiableMedia()) return;
     try {
       this.makingOffer = true;
       await this.pc.setLocalDescription();

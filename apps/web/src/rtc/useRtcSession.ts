@@ -164,8 +164,11 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
           setPeerPresent(true);
           const stale = pendingOfferRef.current;
           if (stale && peer.pc.signalingState === 'have-local-offer') {
+            pendingOfferRef.current = null;
             sigRef.current?.sendSdp(opts.sessionId, stale);
           } else if (peer.pc.signalingState === 'stable') {
+            // No-ops when this peer has nothing to negotiate yet, which would
+            // otherwise emit an m-line-less offer and break the session.
             void peer.forceOffer();
           }
         },
@@ -217,6 +220,11 @@ export function useRtcSession(opts: RtcSessionOptions): RtcSessionState {
       setRemoteStream(null);
       inputCount.current = 0;
       setRemoteInput(null);
+      // The ref outlives this effect (StrictMode re-runs it, and role/session
+      // changes recreate the peer). A description left here belongs to the
+      // PeerSession just closed, so sending it later would negotiate against a
+      // connection that no longer exists.
+      pendingOfferRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.sessionId, opts.signallingToken, opts.role]);
