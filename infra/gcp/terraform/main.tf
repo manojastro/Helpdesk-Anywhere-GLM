@@ -101,7 +101,7 @@ resource "google_artifact_registry_repository" "repo" {
 resource "google_cloud_run_v2_service" "backend" {
   name     = "helpdesk-backend"
   location = var.region
-  ingress  = "INGRESS_ALL"
+  ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
     containers {
@@ -113,8 +113,11 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       env {
         name = "JWT_SECRET"
-        secret_ref {
-          secret = google_secret_manager_secret_version.jwt_secret.secret
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.jwt_secret.secret_id
+            version = "latest"
+          }
         }
       }
       env {
@@ -127,8 +130,11 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       env {
         name = "TURN_CREDENTIAL"
-        secret_ref {
-          secret = google_secret_manager_secret_version.turn_secret.secret
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.turn_secret.secret_id
+            version = "latest"
+          }
         }
       }
 

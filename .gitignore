@@ -25,6 +25,12 @@ secrets/
 serviceAccount*.json
 gcp-key*.json
 
+# Terraform working files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
 # Test coverage
 coverage/
 
