@@ -4,6 +4,7 @@ import { api } from '../api';
 import { useRtcSession } from '../rtc/useRtcSession';
 import { ScreenViewer } from '../components/ScreenViewer';
 import { ChatPanel } from '../components/ChatPanel';
+import { BrandMark } from '../components/BrandMark';
 
 export function ConsolePage({ onLogout }: { onLogout: () => void }) {
   const [created, setCreated] = useState<CreateSessionResponse | null>(null);
@@ -70,53 +71,55 @@ export function ConsolePage({ onLogout }: { onLogout: () => void }) {
     : '';
 
   return (
-    <div>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2 style={{ margin: 0 }}>Technician Console</h2>
-        <div style={{ display: 'flex', gap: 8 }}>
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="brand">
+          <BrandMark />
+          <div>
+            <div className="brand-title">Technician Console</div>
+            <div className="brand-sub">Helpdesk Anywhere</div>
+          </div>
+        </div>
+        <div className="header-actions">
           {(created || joined) && (
             <button className="danger" onClick={endSession}>
               End session
             </button>
           )}
-          <button onClick={onLogout}>Sign out</button>
+          <button className="ghost" onClick={onLogout}>
+            Sign out
+          </button>
         </div>
       </header>
 
-      {error && (
-        <p style={{ color: '#e74c3c', background: '#2a1512', padding: '8px 12px', borderRadius: 8 }}>
-          {error}
-        </p>
-      )}
-      {rtc.error && (
-        <p style={{ color: '#e67e22', background: '#2a1f12', padding: '8px 12px', borderRadius: 8 }}>
-          {rtc.error}
-        </p>
-      )}
+      {error && <div className="alert alert-error">{error}</div>}
+      {rtc.error && <div className="alert alert-warn">{rtc.error}</div>}
 
       {!created && (
-        <div className="card" style={{ marginTop: 24, textAlign: 'center', padding: 48 }}>
-          <p className="muted">Create a support session and share the code with the user.</p>
-          <button onClick={createSession} disabled={busy}>
+        <div className="card" style={{ textAlign: 'center', padding: '56px 24px' }}>
+          <h3 style={{ fontSize: 17 }}>Start a support session</h3>
+          <p className="muted" style={{ margin: '8px 0 22px', fontSize: 13.5 }}>
+            Create a session and share the code or join link with the user.
+          </p>
+          <button className="lg" onClick={createSession} disabled={busy}>
             {busy ? 'Creating…' : 'Create Support Session'}
           </button>
         </div>
       )}
 
       {created && !joined && (
-        <div className="card" style={{ marginTop: 24, textAlign: 'center', padding: 40 }}>
-          <p className="muted">Session created — waiting for the endpoint to join.</p>
-          <div
-            className="mono"
-            style={{ fontSize: 42, letterSpacing: 10, margin: '16px 0', fontWeight: 600 }}
-          >
-            {created.session.code}
-          </div>
-          <p className="muted" style={{ fontSize: 12, wordBreak: 'break-all' }}>
-            Join link: <a href={joinLink}>{joinLink}</a>
+        <div className="card" style={{ textAlign: 'center', padding: '40px 24px' }}>
+          <span className="badge is-pending">Waiting for endpoint</span>
+          <div className="session-code">{created.session.code}</div>
+          <p className="muted" style={{ fontSize: 13, margin: '0 0 16px' }}>
+            Share this code, or send the join link below.
           </p>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+          <a className="joinlink" href={joinLink}>
+            {joinLink}
+          </a>
+          <div className="btn-row">
             <button
+              className="ghost"
               onClick={() => {
                 void navigator.clipboard.writeText(joinLink);
                 setCopied(true);
@@ -133,13 +136,16 @@ export function ConsolePage({ onLogout }: { onLogout: () => void }) {
       )}
 
       {joined && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16, marginTop: 24 }}>
+        <div className="console-grid">
           <div>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 8 }}>
+            <div className="statusbar">
               <StatusBadge state={rtc.connState} />
-              <span className="muted" style={{ fontSize: 13 }}>
-                DataChannel: {rtc.dataChannelOpen ? 'open' : 'closed'} · Peer:{' '}
-                {rtc.peerPresent ? 'connected' : 'waiting'} · Session {created?.session.code}
+              <span className="meta">
+                DataChannel: {rtc.dataChannelOpen ? 'open' : 'closed'}
+                <span className="meta-sep">·</span>
+                Peer: {rtc.peerPresent ? 'connected' : 'waiting'}
+                <span className="meta-sep">·</span>
+                Session <span className="mono">{created?.session.code}</span>
               </span>
             </div>
             <ScreenViewer
@@ -148,14 +154,24 @@ export function ConsolePage({ onLogout }: { onLogout: () => void }) {
               onControl={rtc.sendControl}
               onFramePresented={() => setFramesPresented((n) => n + 1)}
             />
-            <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>
+            <p className="statline">
               {rtc.videoStats ?? 'video stats pending…'} · painted: {framesPresented} {videoDebug}
             </p>
             <VideoDebugProbe stream={rtc.remoteStream} onChange={setVideoDebug} />
           </div>
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', height: 480 }}>
-            <h3 style={{ margin: '0 0 8px' }}>Chat</h3>
-            <ChatPanel messages={rtc.chat} enabled={rtc.dataChannelOpen} onSend={rtc.sendChat} />
+          <div className="card chat-card">
+            <div className="chat-head">
+              <span className="chat-title">Chat</span>
+              <span className="muted" style={{ fontSize: 11.5 }}>
+                {rtc.dataChannelOpen ? 'connected' : 'offline'}
+              </span>
+            </div>
+            <ChatPanel
+              messages={rtc.chat}
+              enabled={rtc.dataChannelOpen}
+              onSend={rtc.sendChat}
+              selfRole="technician"
+            />
           </div>
         </div>
       )}
@@ -225,21 +241,7 @@ function VideoDebugProbe({
 }
 
 function StatusBadge({ state }: { state: string }) {
-  const color =
-    state === 'connected' ? '#27ae60' : state === 'failed' ? '#c0392b' : '#f39c12';
-  return (
-    <span
-      style={{
-        background: color,
-        color: '#fff',
-        borderRadius: 12,
-        padding: '2px 12px',
-        fontSize: 13,
-        fontWeight: 600,
-        textTransform: 'capitalize',
-      }}
-    >
-      {state}
-    </span>
-  );
+  const tone =
+    state === 'connected' ? 'is-connected' : state === 'failed' ? 'is-failed' : 'is-pending';
+  return <span className={`badge is-state ${tone}`}>{state}</span>;
 }

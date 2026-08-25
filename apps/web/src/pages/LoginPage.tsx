@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, storeAccess } from '../api';
+import { BrandMark } from '../components/BrandMark';
 
 /** POC lightweight technician identification (see docs/POC_SCOPE.md). */
 export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
@@ -23,12 +24,14 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
   };
 
   return (
-    <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 80 }}>
-      <div className="card" style={{ width: 380 }}>
-        <h2 style={{ marginTop: 0 }}>Helpdesk Anywhere</h2>
-        <p className="muted" style={{ marginTop: -8 }}>
-          Technician sign-in (POC)
+    <div className="login-wrap">
+      <div className="card login-card">
+        <BrandMark size={24} />
+        <h2>Helpdesk Anywhere</h2>
+        <p className="muted" style={{ marginTop: 4, fontSize: 13 }}>
+          Technician sign-in
         </p>
+
         <form onSubmit={submit}>
           <input
             type="email"
@@ -36,14 +39,20 @@ export function LoginPage({ onLoggedIn }: { onLoggedIn: () => void }) {
             placeholder="technician@company.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            style={{ width: '100%', marginBottom: 12 }}
             autoFocus
           />
-          <button type="submit" disabled={busy || !email} style={{ width: '100%' }}>
+          <button type="submit" className="lg" disabled={busy || !email}>
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-        {error && <p style={{ color: '#e74c3c' }}>{error}</p>}
+
+        {error && (
+          <div className="alert alert-error" style={{ marginTop: 16, marginBottom: 0 }}>
+            <span>{error}</span>
+          </div>
+        )}
+
+        <p className="field-hint">Proof of concept — no password required.</p>
       </div>
     </div>
   );

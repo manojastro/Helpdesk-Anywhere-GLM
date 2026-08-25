@@ -37,7 +37,9 @@ export function App() {
   }, []);
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: 24 }}>
+    <>
+      {/* Page-level chrome (max width, padding) now lives in .app-shell /
+          .login-wrap so each route controls its own layout. */}
       {route === 'login' && (
         <LoginPage
           onLoggedIn={() => {
@@ -60,6 +62,6 @@ export function App() {
           initialToken={joinRoute.token}
         />
       )}
-    </div>
+    </>
   );
 }

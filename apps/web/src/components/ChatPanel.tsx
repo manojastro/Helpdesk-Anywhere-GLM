@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ChatMessage } from '@helpdesk/shared';
+import type { ChatMessage, PeerRole } from '@helpdesk/shared';
 
 interface Props {
   messages: ChatMessage[];
   enabled: boolean;
   onSend: (text: string) => void;
+  /** Which side is rendering this panel — decides "You" vs the other party. */
+  selfRole: PeerRole;
 }
 
 function ts(ms: number): string {
   return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function ChatPanel({ messages, enabled, onSend }: Props) {
+export function ChatPanel({ messages, enabled, onSend, selfRole }: Props) {
+  const otherLabel = selfRole === 'technician' ? 'Endpoint' : 'Technician';
   const [text, setText] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -21,35 +24,24 @@ export function ChatPanel({ messages, enabled, onSend }: Props) {
   }, [messages.length]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div
-        ref={listRef}
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '8px 0',
-          minHeight: 200,
-        }}
-      >
-        {messages.length === 0 && (
-          <p className="muted" style={{ padding: '0 12px', fontSize: 13 }}>
-            No messages yet.
-          </p>
-        )}
-        {messages.map((m, i) => (
-          <div key={i} style={{ padding: '4px 12px' }}>
-            <span className="muted" style={{ fontSize: 12, marginRight: 8 }}>
-              {ts(m.ts)}
-            </span>
-            <strong style={{ color: m.from === 'technician' ? '#5dade2' : '#58d68d', marginRight: 8 }}>
-              {m.from === 'technician' ? 'You' : 'Endpoint'}:
-            </strong>
-            <span style={{ wordBreak: 'break-word' }}>{m.text}</span>
-          </div>
-        ))}
+    <>
+      <div ref={listRef} className="chat-list">
+        {messages.length === 0 && <p className="chat-empty">No messages yet.</p>}
+        {messages.map((m, i) => {
+          const own = m.from === selfRole;
+          return (
+            <div key={i} className={own ? 'msg is-own' : 'msg'}>
+              <span className="msg-meta">
+                {own ? 'You' : otherLabel} · {ts(m.ts)}
+              </span>
+              <span className="msg-bubble">{m.text}</span>
+            </div>
+          );
+        })}
       </div>
+
       <form
-        style={{ display: 'flex', gap: 8, paddingTop: 8, borderTop: '1px solid #232d38' }}
+        className="chat-form"
         onSubmit={(e) => {
           e.preventDefault();
           if (!text.trim() || !enabled) return;
@@ -62,12 +54,11 @@ export function ChatPanel({ messages, enabled, onSend }: Props) {
           disabled={!enabled}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          style={{ flex: 1 }}
         />
         <button type="submit" disabled={!enabled || !text.trim()}>
           Send
         </button>
       </form>
-    </div>
+    </>
   );
 }

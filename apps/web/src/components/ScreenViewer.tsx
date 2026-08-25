@@ -67,19 +67,23 @@ export function ScreenViewer({ stream, connected, onControl, inputEnabled = true
 
   if (!connected || !stream) {
     return (
-      <div
-        style={{
-          background: '#10161d',
-          border: '1px dashed #2d3640',
-          borderRadius: 10,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: 320,
-          color: '#6b7480',
-        }}
-      >
-        {connected ? 'Waiting for video track…' : 'No remote screen'}
+      <div className="stage">
+        <div className="stage-empty">
+          {connected ? (
+            <>
+              <span className="spinner" />
+              <span>Waiting for video track…</span>
+            </>
+          ) : (
+            <>
+              <span style={{ fontSize: 26, opacity: 0.5 }}>🖥️</span>
+              <span>No remote screen</span>
+              <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+                The endpoint has not started sharing yet.
+              </span>
+            </>
+          )}
+        </div>
       </div>
     );
   }
@@ -101,45 +105,39 @@ export function ScreenViewer({ stream, connected, onControl, inputEnabled = true
   };
 
   return (
-    <video
-      ref={videoRef}
-      autoPlay
-      muted
-      playsInline
-      tabIndex={0}
-      onMouseMove={(e) => send({ type: 'mouse_move', ...relPos(e, e.currentTarget) })}
-      onMouseDown={(e) => {
-        e.currentTarget.focus();
-        send({
-          type: 'mouse_click',
-          button: BUTTON_MAP[e.button] ?? 'left',
-          state: 'down',
-          ...relPos(e, e.currentTarget),
-        });
-      }}
-      onMouseUp={(e) =>
-        send({
-          type: 'mouse_click',
-          button: BUTTON_MAP[e.button] ?? 'left',
-          state: 'up',
-          ...relPos(e, e.currentTarget),
-        })
-      }
-      onContextMenu={(e) => e.preventDefault()}
-      onWheel={(e) => {
-        e.preventDefault();
-        send({ type: 'mouse_wheel', delta: Math.sign(e.deltaY) * 120 });
-      }}
-      onKeyDown={onKeyDown}
-      onKeyUp={onKeyUp}
-      style={{
-        width: '100%',
-        borderRadius: 10,
-        border: '1px solid #232d38',
-        background: '#000',
-        outline: 'none',
-        cursor: 'default',
-      }}
-    />
+    <div className="stage">
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        tabIndex={0}
+        onMouseMove={(e) => send({ type: 'mouse_move', ...relPos(e, e.currentTarget) })}
+        onMouseDown={(e) => {
+          e.currentTarget.focus();
+          send({
+            type: 'mouse_click',
+            button: BUTTON_MAP[e.button] ?? 'left',
+            state: 'down',
+            ...relPos(e, e.currentTarget),
+          });
+        }}
+        onMouseUp={(e) =>
+          send({
+            type: 'mouse_click',
+            button: BUTTON_MAP[e.button] ?? 'left',
+            state: 'up',
+            ...relPos(e, e.currentTarget),
+          })
+        }
+        onContextMenu={(e) => e.preventDefault()}
+        onWheel={(e) => {
+          e.preventDefault();
+          send({ type: 'mouse_wheel', delta: Math.sign(e.deltaY) * 120 });
+        }}
+        onKeyDown={onKeyDown}
+        onKeyUp={onKeyUp}
+      />
+    </div>
   );
 }

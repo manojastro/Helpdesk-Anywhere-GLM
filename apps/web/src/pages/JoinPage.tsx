@@ -3,6 +3,7 @@ import type { JoinSessionResponse } from '@helpdesk/shared';
 import { api } from '../api';
 import { useRtcSession } from '../rtc/useRtcSession';
 import { ChatPanel } from '../components/ChatPanel';
+import { BrandMark } from '../components/BrandMark';
 
 function makeSyntheticStream(): MediaStream {
   const canvas = document.createElement('canvas');
@@ -79,26 +80,23 @@ export function JoinPage({
   };
 
   return (
-    <div>
-      <header>
-        <h2 style={{ margin: 0 }}>Helpdesk Anywhere — Endpoint</h2>
-        <p className="muted" style={{ margin: '4px 0 0' }}>
-          {joined
-            ? 'Sharing your screen with the technician.'
-            : 'Enter the session code your technician gave you.'}
-        </p>
+    <div className="app-shell">
+      <header className="app-header">
+        <div className="brand">
+          <BrandMark />
+          <div>
+            <div className="brand-title">Helpdesk Anywhere — Endpoint</div>
+            <div className="brand-sub">
+              {joined
+                ? 'Sharing your screen with the technician.'
+                : 'Enter the session code your technician gave you.'}
+            </div>
+          </div>
+        </div>
       </header>
 
-      {error && (
-        <p style={{ color: '#e74c3c', background: '#2a1512', padding: '8px 12px', borderRadius: 8 }}>
-          {error}
-        </p>
-      )}
-      {rtc.error && (
-        <p style={{ color: '#e67e22', background: '#2a1f12', padding: '8px 12px', borderRadius: 8 }}>
-          {rtc.error}
-        </p>
-      )}
+      {error && <div className="alert alert-error">{error}</div>}
+      {rtc.error && <div className="alert alert-warn">{rtc.error}</div>}
 
       {!joined && (
         <form
@@ -128,15 +126,18 @@ export function JoinPage({
       )}
 
       {joined && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 16, marginTop: 24 }}>
-          <div className="card" style={{ textAlign: 'center', padding: 40 }}>
-            <div style={{ fontSize: 48, marginBottom: 12 }}>🖥️</div>
-            <p style={{ fontSize: 18, fontWeight: 600, textTransform: 'capitalize' }}>
+        <div className="console-grid">
+          <div className="card endpoint-stage">
+            <span className="endpoint-icon">🖥️</span>
+            <span className="endpoint-state">
               {rtc.connState === 'connected' ? 'Sharing screen' : rtc.connState}
-            </p>
-            <p className="muted" style={{ fontSize: 13 }}>
-              Peer: {rtc.peerPresent ? 'technician connected' : 'waiting for technician…'}
-            </p>
+            </span>
+            <span
+              className={`badge ${rtc.peerPresent ? 'is-connected' : 'is-pending'}`}
+              style={{ marginBottom: 6 }}
+            >
+              {rtc.peerPresent ? 'Technician connected' : 'Waiting for technician'}
+            </span>
             <button
               className="danger"
               onClick={() => {
@@ -147,9 +148,19 @@ export function JoinPage({
               Stop sharing
             </button>
           </div>
-          <div className="card" style={{ display: 'flex', flexDirection: 'column', height: 480 }}>
-            <h3 style={{ margin: '0 0 8px' }}>Chat</h3>
-            <ChatPanel messages={rtc.chat} enabled={rtc.dataChannelOpen} onSend={rtc.sendChat} />
+          <div className="card chat-card">
+            <div className="chat-head">
+              <span className="chat-title">Chat</span>
+              <span className="muted" style={{ fontSize: 11.5 }}>
+                {rtc.dataChannelOpen ? 'connected' : 'offline'}
+              </span>
+            </div>
+            <ChatPanel
+              messages={rtc.chat}
+              enabled={rtc.dataChannelOpen}
+              onSend={rtc.sendChat}
+              selfRole="endpoint"
+            />
           </div>
         </div>
       )}
