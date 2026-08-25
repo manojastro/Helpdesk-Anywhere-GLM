@@ -56,8 +56,14 @@ export function ScreenViewer({ stream, connected, onControl, inputEnabled = true
       }
     }
     return undefined;
+    // `connected` matters as much as `stream`: while it is false this component
+    // renders the placeholder instead of the <video>, so videoRef is null and
+    // this effect has nothing to attach to. ontrack fires well before the peer
+    // reaches 'connected', so on the normal ordering the <video> mounts only on
+    // a later render — and without `connected` here that render never assigns
+    // srcObject, leaving a permanently black viewer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stream]);
+  }, [stream, connected]);
 
   if (!connected || !stream) {
     return (
