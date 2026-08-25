@@ -21,7 +21,7 @@ variable "db_password" {
 }
 
 variable "turn_secret" {
-  description = "coturn static-auth-secret (stored in Secret Manager + VM metadata)"
+  description = "coturn long-term-credential password for user helpdesk (Secret Manager + VM metadata)"
   type        = string
   sensitive   = true
 }

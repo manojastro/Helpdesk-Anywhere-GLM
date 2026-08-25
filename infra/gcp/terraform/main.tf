@@ -119,7 +119,7 @@ resource "google_cloud_run_v2_service" "backend" {
       }
       env {
         name  = "TURN_URL"
-        value = "turn,${google_compute_address.turn.address}:3478?transport=tcp;turns,${google_compute_address.turn.address}:443?transport=tcp"
+        value = "turn:${google_compute_address.turn.address}:3478?transport=tcp,turns:${google_compute_address.turn.address}:443?transport=tcp"
       }
       env {
         name  = "TURN_USERNAME"

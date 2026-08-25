@@ -30,14 +30,37 @@ terraform apply \
 ```
 
 Outputs: backend URL + TURN address. Set the same TURN secret as the agent's
-`TURN_CREDENTIAL` and username `helpdesk` (or generate time-limited REST
-credentials server-side for production).
+`TURN_CREDENTIAL` and username `helpdesk`.
+
+## TURN notes
+
+coturn uses the **long-term credential mechanism** with a single static user
+(`user=helpdesk:<turn_secret>` in `../coturn/startup.sh`). That matches the
+static `TURN_USERNAME`/`TURN_CREDENTIAL` pair the backend serves from
+`GET /config/ice`.
+
+Do not add `use-auth-secret`/`static-auth-secret` to the coturn config unless
+you also change the backend: those select the TURN REST scheme, where coturn
+expects a time-limited username of `<unix-expiry>:<name>` and a base64
+HMAC-SHA1 credential, and every allocation from the current backend would be
+rejected.
+
+`TURN_URL` is a comma-separated list, and each entry must carry its scheme —
+`turn:HOST:3478?transport=tcp,turns:HOST:443?transport=tcp`. The backend drops
+entries with any other scheme and logs a warning, because a malformed URL makes
+the browser's `RTCPeerConnection` constructor throw and no session can open.
+
+### `turns:` needs a real certificate
+
+`startup.sh` generates a self-signed certificate so coturn's TLS listener
+starts, but **browsers validate the TURN server's certificate**, so `turns:443`
+will not work with it. For TLS relay, issue a CA-signed certificate (Let's
+Encrypt) for a DNS name pointing at the coturn VM and publish that hostname in
+`TURN_URL`. `turn:<ip>:3478?transport=tcp` needs no certificate and is the
+working POC fallback path.
 
 ## Notes / known POC shortcuts
 
 - Cloud SQL uses public IP + SSL + authorized networks (0.0.0.0/0) — move to
   private IP + VPC connector before any real usage.
-- coturn TLS uses a self-signed cert; browsers require a CA-signed cert for
-  `turns:` — use Let's Encrypt/certbot on a DNS name for the real forced-RELAY
-  test over TLS.
 - TURN relay port range is narrowed (49160-49200) for POC firewall simplicity.
