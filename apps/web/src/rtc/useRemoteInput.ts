@@ -211,7 +211,11 @@ export function useRemoteInput({ send, enabled, surfaceRef }: RemoteInputOptions
       try {
         // Capture the pointer so a drag that leaves the surface still tracks.
         (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-        (e.currentTarget as HTMLElement).focus?.();
+        // preventScroll matters: a plain focus() scrolls the viewer into view,
+        // which moves the element under the pointer between press and release.
+        // The release then maps to a different position and Windows sees a
+        // drag instead of a click — the first click of a session was lost.
+        (e.currentTarget as HTMLElement).focus?.({ preventScroll: true });
       } catch {
         /* capture unavailable — dragging past the edge just stops tracking */
       }
