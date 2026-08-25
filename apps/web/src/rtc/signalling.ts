@@ -37,8 +37,18 @@ export class SignallingClient {
     this.sock.on('connect', () => {
       void this.sock
         .emitWithAck(SIGNAL_EVENTS.join, { sessionId, role, token })
-        .then((ack: { ok: boolean; error?: string }) => {
-          if (!ack?.ok) this.cb.onError?.(ack?.error ?? 'join rejected');
+        .then((ack: { ok: boolean; error?: string; peers?: string[] }) => {
+          if (!ack?.ok) {
+            this.cb.onError?.(ack?.error ?? 'join rejected');
+            return;
+          }
+          // Peers already in the room are reported ONLY in this ack —
+          // signal:peer-joined fires for later arrivals, never for ones that
+          // were there first. Ignoring these left whichever peer joined second
+          // believing the room was empty, so useRtcSession gated its own
+          // SDP/ICE away and no session could ever negotiate. The .NET agent
+          // has always read this list; the browser client did not.
+          for (const peer of ack.peers ?? []) this.cb.onPeerJoined?.(peer);
         })
         .catch((err: Error) => this.cb.onError?.(err.message));
     });
