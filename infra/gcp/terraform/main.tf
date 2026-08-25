@@ -103,7 +103,22 @@ resource "google_cloud_run_v2_service" "backend" {
   location = var.region
   ingress  = "INGRESS_TRAFFIC_ALL"
 
+  # socket.io needs the technician and the endpoint agent on the SAME instance:
+  # room occupancy lives in an in-memory Map (SessionRoomsService), so peers on
+  # different instances never see each other, and the polling transport needs
+  # sticky routing regardless.
+  #
+  # Raising max_instance_count above 1 REQUIRES moving room state off the
+  # process first — Redis, or the socket.io Redis adapter — otherwise sessions
+  # break as soon as Cloud Run scales out.
   template {
+    session_affinity = true
+
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 1
+    }
+
     containers {
       image = var.backend_image
 

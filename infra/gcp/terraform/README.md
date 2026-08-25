@@ -63,4 +63,7 @@ working POC fallback path.
 
 - Cloud SQL uses public IP + SSL + authorized networks (0.0.0.0/0) — move to
   private IP + VPC connector before any real usage.
+- Cloud Run is pinned to `max_instance_count = 1` with `session_affinity`
+  because signalling room state is an in-memory Map. Lifting the cap requires
+  moving that state to Redis (or the socket.io Redis adapter) first.
 - TURN relay port range is narrowed (49160-49200) for POC firewall simplicity.
